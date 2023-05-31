@@ -74,5 +74,22 @@ def DifMeth(patient, control, score_method='zscore', df=None, corr_method='bonfe
         pval_corrected = fdr_correction(pvals, corr_method)
         
     return(pval_corrected)
+
+# Path to pd.Dataframe() containing samples methylation values (M-values recommended)
+case_path=sys.argv[1]
+# Path to pd.Dataframe() containing the summary statistics (see sum_stat file) of the control population (M-values recommended)
+sum_stat_path=sys.argv[2]
+output_path = sys.argv[3]
+score_method= sys.argv[4]
+df= sys.argv[5]
+corr_method= sys.argv[6]
+cores_number = sys.argv[7]
+
+case = pd.read_csv(case_path, index_col=0)
+sum_stat = pd.read_csv(sum_stat_path, index_col=0)
+
+output = DifMeth(case, sum_stat, score_method, df, corr_method)
+
+output.to_csv(output_path+'difmeth_adjusted_pvals.tsv', sep='\t')
     
     
