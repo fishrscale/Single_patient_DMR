@@ -6,7 +6,7 @@ Created on Wed Jan 22 09:12:55 2020
 @author: robingrolaux
 """
 import sys
-from pandas import *
+import pandas as pd
 import numpy as np
 import logging
 from multiprocessing import Pool, cpu_count
@@ -15,23 +15,23 @@ from scipy.stats import chi2, combine_pvalues
 
 from EmpiricalBrownsMethod import *
 
-def QueueGenChunks(window, case, caserrBeta, annot_file):
+def QueueGenChunks(window, case_pval, pop_Beta, annot_file):
     
     annot = annot_file
     
-    case = case.reindex(annot.index.tolist())
-    caserrBeta = caserrBeta.reindex(annot.index.tolist())
+    case = case_pval.reindex(annot.index.tolist())
+    pop_Beta = pop_Beta.reindex(annot.index.tolist())
     
     for i in range(1,23):
         
         sub = annot.loc[annot['chr'] == i]
         
-        yield(window.loc[window['chr'] == i], case.reindex(sub.index), caserrBeta.reindex(sub.index))
+        yield(window.loc[window['chr'] == i], case.reindex(sub.index), pop_Beta.reindex(sub.index))
         
     
 def ProcessingDF(IndependentData):
     
-    window, case_fdr, caserrBeta = IndependentData
+    window, case_pval, pop_Beta = IndependentData
     
     for i in window.index:
 
@@ -39,7 +39,7 @@ def ProcessingDF(IndependentData):
         print("################")
         cgs = window.loc[i]['cgs']#['IlmnID']
 
-        bvals = caserrBeta.reindex(cgs)#[j]
+        bvals = pop_Beta.reindex(cgs)#[j]
         bvals = np.array(bvals)[~np.isnan(np.array(bvals)).any(axis=1)]
         covar_matrix = CalculateCovariances(bvals)
 
@@ -51,8 +51,6 @@ def ProcessingDF(IndependentData):
                         pvals = float("nan")
                     else:
                         if len(pvals) > 1:
-                            #pvals = EmpiricalBrownsMethod(bvals, pvals, 
-                            #                              extra_info = False)
                             pvals = CombinePValues(covar_matrix, pvals, extra_info = False)
 
                     window.at[i,j] = pvals
@@ -61,7 +59,7 @@ def ProcessingDF(IndependentData):
     
     
     
-def MultiProcessing(window, case, annot_file, cores_number, caserrBeta):
+def MultiProcessing(window, case_pval, annot_file, cores_number, pop_Beta):
     
     df = DataFrame()
     
@@ -73,41 +71,45 @@ def MultiProcessing(window, case, annot_file, cores_number, caserrBeta):
     
     for result in pool.imap_unordered(ProcessingDF, QueueGenChunks(window, case, caserrBeta, annot_file)):
         
-        df = concat([df, result], axis = 0)
+        df = pd.concat([df, result], axis = 0)
 
     pool.close()
     pool.join()
     
     return(df)
-    
+# Path to pd.Dataframe() containing adjusted pvalues  
 case_path=sys.argv[1]
+# Path to pd.Dataframe() containing the genomic location of regions to combine
 annot_window_path=sys.argv[2]
 output_path = sys.argv[3]
 cores_number = int(sys.argv[4])
+# Annotation file containing the CpGs position
 annot_path=sys.argv[5]
-case_pathBeta=sys.argv[6]
+
+# Path to pd.Dataframe() containing the Beta values from the control population
+pop_pathBeta=sys.argv[6]
 
 
-caserr = read_csv(case_path,
+case_pval = pd.read_csv(case_path,
                 index_col = 0)
 
-window = read_csv(annot_window_path,
+window = pd.read_csv(annot_window_path,
                   index_col = 0,
                   #As read_csv reads list as str, transformation of the first columns into a list
                   converters={4: lambda x: x[1:-1].replace('\'','').split(', ')})
 
 
-caserr = caserr.dropna(axis=0, how='any')
+case_pval = caserr.dropna(axis=0, how='any')
 
 
-caserrBeta = read_csv(case_pathBeta,
+pop_Beta = pd.read_csv(pop_pathBeta,
                 index_col = 0)
 
 
 
-annot_file = read_csv(annot_path, index_col = 0)
+annot_file = pd.read_csv(annot_path, index_col = 0)
     
-output = MultiProcessing(window, caserr, annot_file, cores_number, caserrBeta)
+output = MultiProcessing(window, case_pval, annot_file, cores_number, pop_Beta)
 
 
 output.to_csv(output_path+"/pvalPerWindowBrown.tsv", sep = "\t")
